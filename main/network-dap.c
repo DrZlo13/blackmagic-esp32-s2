@@ -1,3 +1,6 @@
+#include "dap_config.h"
+#include "freertos/portmacro.h"
+#include <stdint.h>
 #include <string.h>
 #include <sys/param.h>
 #include <freertos/FreeRTOS.h>
@@ -18,56 +21,88 @@
 #include "led.h"
 #include "usb.h"
 #include "delay.h"
-#include "network-gdb.h"
-#include <gdb-glue.h>
+#include "network-dap.h"
+#include "dap.h"
 
-#define PORT 2345
+#define PORT 2806
 #define KEEPALIVE_IDLE 5
 #define KEEPALIVE_INTERVAL 5
 #define KEEPALIVE_COUNT 3
-#define TAG "network-gdb"
+#define TAG "network-dap"
+
+#define DAP_TAG "dap2"
+
+#define DAP_SERVER_PRIORITY 5
 
 typedef struct {
     bool connected;
     int socket_id;
-} NetworkGDB;
+} NetworkDAP;
 
-static NetworkGDB network_gdb;
+static NetworkDAP network_dap;
 
-bool network_gdb_connected(void) {
-    return network_gdb.connected;
+void dap_callback_connect(void) {
+    ESP_LOGI(TAG, "connected");
+    led_set(0, 0, 0);
+    network_dap.connected = true;
 }
 
-void network_gdb_send(uint8_t* buffer, size_t size) {
-    int to_write = size;
-    while(to_write > 0) {
-        int written = send(network_gdb.socket_id, buffer + (size - to_write), to_write, 0);
-        to_write -= written;
-    }
-};
+void dap_callback_disconnect(void) {
+    ESP_LOGI(TAG, "disconnected");
+    led_set(255, 0, 0);
+    network_dap.connected = false;
+}
 
-static void receive_and_send_to_gdb(void) {
+bool dap_is_connected(void) {
+    return network_dap.connected;
+}
+
+bool network_dap_connected(void) {
+    return network_dap.connected;
+}
+
+static void receive_and_send_to_dap(void) {
     size_t rx_size = SIZE_MAX;
-    size_t gdb_packet_size = gdb_glue_get_packet_size();
+    size_t gdb_packet_size = DAP_CONFIG_PACKET_SIZE;
     uint8_t* buffer_rx = malloc(gdb_packet_size);
 
+    uint8_t tx_data[DAP_CONFIG_PACKET_SIZE];
+
+    TickType_t prev_send = 0;
     do {
-        if(gdb_glue_can_receive()) {
-            size_t max_len = gdb_glue_get_free_size();
-            if(max_len > gdb_packet_size) max_len = gdb_packet_size;
-            rx_size = recv(network_gdb.socket_id, buffer_rx, max_len, 0);
-            if(rx_size > 0) {
-                gdb_glue_receive(buffer_rx, rx_size);
-            }
-        } else {
-            delay(10);
+        // size_t max_len = gdb_glue_get_free_size();
+        size_t max_len = 64;
+        if(max_len > gdb_packet_size) max_len = gdb_packet_size;
+        led_set_red(255);
+        rx_size = recv(network_dap.socket_id, buffer_rx, max_len, 0);
+
+        // ESP_LOGW(TAG, "+%d", xTaskGetTickCount() - prev_send);
+        if(rx_size > 0) {
+            // ESP_LOGW(TAG, "Received %d bytes", rx_size);
+            // gdb_glue_receive(buffer_rx, rx_size);
+            // send(network_dap.socket_id, buffer_rx, rx_size, 0);
+            TickType_t ticks_pre = xTaskGetTickCount();
+
+            led_set_red(0);
+
+            led_set_blue(255);
+            size_t tx_size = dap_process_request(buffer_rx, rx_size, tx_data, sizeof(tx_data));
+            led_set_blue(0);
+
+            // ESP_LOGW(TAG, "Processed to %d bytes", (uint32_t)tx_size);
+
+            led_set_green(255);
+            send(network_dap.socket_id, tx_data, tx_size, 0);
+            prev_send = xTaskGetTickCount();
+            // ESP_LOGW(TAG, ">%d(%d)", tx_size, prev_send - ticks_pre);
+            led_set_green(0);
         }
     } while(rx_size > 0);
 
     free(buffer_rx);
 }
 
-static void network_gdb_server_task(void* pvParameters) {
+static void network_dap_server_task(void* pvParameters) {
     char addr_str[128];
     int addr_family = (int)pvParameters;
     int ip_protocol = 0;
@@ -75,7 +110,7 @@ static void network_gdb_server_task(void* pvParameters) {
     int keepIdle = KEEPALIVE_IDLE;
     int keepInterval = KEEPALIVE_INTERVAL;
     int keepCount = KEEPALIVE_COUNT;
-    network_gdb.connected = false;
+    network_dap.connected = false;
     struct sockaddr_storage dest_addr;
 
     if(addr_family == AF_INET) {
@@ -84,6 +119,7 @@ static void network_gdb_server_task(void* pvParameters) {
         dest_addr_ip4->sin_family = AF_INET;
         dest_addr_ip4->sin_port = htons(PORT);
         ip_protocol = IPPROTO_IP;
+        // ip_protocol = IPPROTO_UDP;
     }
 
     int listen_sock = socket(addr_family, SOCK_STREAM, ip_protocol);
@@ -123,11 +159,12 @@ static void network_gdb_server_task(void* pvParameters) {
         }
 
         // Set tcp keepalive option
-        setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(int));
-        setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &keepIdle, sizeof(int));
-        setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(int));
-        setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(int));
-        setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(int));
+        // setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(int));
+        int nodelay = 1;
+        setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(int));
+        // setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(int));
+        // setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(int));
+        // setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(int));
 
         // Convert ip address to string
         if(source_addr.ss_family == PF_INET) {
@@ -140,24 +177,24 @@ static void network_gdb_server_task(void* pvParameters) {
         // continue only if DAP-Link is not connected
         if(!dap_is_connected()) {
             led_set_blue(255);
-            delay(10);
+            delay(5);
             led_set_blue(0);
 
-            ESP_LOGI(TAG, "Accepted GDB connection");
+            ESP_LOGI(TAG, "Accepting networked DAP-Link connection");
 
-            network_gdb.socket_id = sock;
-            network_gdb.connected = true;
+            network_dap.socket_id = sock;
+            network_dap.connected = true;
 
-            receive_and_send_to_gdb();
+            receive_and_send_to_dap();
 
-            network_gdb.connected = false;
-            network_gdb.socket_id = -1;
+            network_dap.connected = false;
+            network_dap.socket_id = -1;
 
             led_set_blue(255);
-            delay(10);
+            delay(5);
             led_set_blue(0);
         } else {
-            ESP_LOGE(TAG, "DAP-Link is connected, not accepting GDB connection");
+            ESP_LOGE(TAG, "DAP-Link is connected, not accepting connection");
         }
 
         shutdown(sock, 0);
@@ -169,10 +206,10 @@ CLEAN_UP:
     vTaskDelete(NULL);
 }
 
-void network_gdb_server_init(void) {
-    network_gdb.connected = false;
-    network_gdb.socket_id = -1;
+void network_dap_server_init(void) {
+    network_dap.connected = false;
+    network_dap.socket_id = -1;
 
     esp_wifi_set_ps(WIFI_PS_NONE);
-    xTaskCreate(network_gdb_server_task, "network_gdb_server", 4096, (void*)AF_INET, 5, NULL);
+    xTaskCreate(network_dap_server_task, "network_dap_server", 4096, (void*)AF_INET, DAP_SERVER_PRIORITY, NULL);
 }

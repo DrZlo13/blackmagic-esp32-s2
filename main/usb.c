@@ -128,21 +128,21 @@ static void dap_rx_callback(void* context) {
     xTaskNotify(dap_task_handle, DAP_RECEIVE_FLAG, eSetBits);
 }
 
-void dap_callback_connect(void) {
-    ESP_LOGI(DAP_TAG, "connected");
-    led_set(0, 0, 0);
-    dap_link_connected = true;
-}
+// void dap_callback_connect(void) {
+//     ESP_LOGI(DAP_TAG, "connected");
+//     led_set(0, 0, 0);
+//     dap_link_connected = true;
+// }
 
-void dap_callback_disconnect(void) {
-    ESP_LOGI(DAP_TAG, "disconnected");
-    led_set(255, 0, 0);
-    dap_link_connected = false;
-}
+// void dap_callback_disconnect(void) {
+//     ESP_LOGI(DAP_TAG, "disconnected");
+//     led_set(255, 0, 0);
+//     dap_link_connected = false;
+// }
 
-bool dap_is_connected(void) {
-    return dap_link_connected;
-}
+// bool dap_is_connected(void) {
+//     return dap_link_connected;
+// }
 
 static void dap_task(void* arg) {
     ESP_LOGI(DAP_TAG, "started");
@@ -218,7 +218,7 @@ void usb_init(void) {
 
         usb_state.connected = false;
         usb_uart_init();
-        usb_dap_init();
+        // usb_dap_init();
         usb_glue_init(USBDeviceTypeDapLink);
     }
 

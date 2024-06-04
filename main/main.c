@@ -14,6 +14,7 @@
 #include "network-http.h"
 #include "network-gdb.h"
 #include "network-uart.h"
+#include "network-dap.h"
 #include "factory-reset-service.h"
 
 #include <gdb-glue.h>
@@ -66,6 +67,7 @@ void app_main(void) {
     network_http_server_init();
     network_gdb_server_init();
     network_uart_server_init();
+    network_dap_server_init();
 
     usb_init();
     cli_uart_init();

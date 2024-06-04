@@ -12,6 +12,7 @@ set(SOURCES
     "network-http.c"
     "network-gdb.c"
     "network-uart.c"
+    "network-dap.c"
     "cli-uart.c"
     "cli/cli.c"
     "cli/cli-commands.c"

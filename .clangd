@@ -1,0 +1,16 @@
+CompileFlags:
+    Add: 
+        - -Wno-unknown-warning-option
+        - -Wno-format
+    Remove: 
+        - -mlongcalls
+        - -fstrict-volatile-bitfields
+        - -fno-tree-switch-conversion
+
+
+---
+
+If:
+    PathMatch: .*\.h
+Diagnostics:
+    UnusedIncludes: None

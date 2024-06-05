@@ -4,7 +4,6 @@
 [submodule "components/mlib/mlib"]
 	path = components/mlib/mlib
 	url = https://github.com/P-p-H-d/mlib.git
-	url = https://github.com/hathach/tinyusb
 [submodule "components/dap-link/free-dap"]
 	path = components/dap-link/free-dap
 	url = https://github.com/ataradov/free-dap

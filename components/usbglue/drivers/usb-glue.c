@@ -1,4 +1,7 @@
 #include <tusb.h>
+#include <esp_mac.h>
+#include <esp_log.h>
+
 #include "dap-link/dap-link-descriptors.h"
 #include "dual-cdc/dual-cdc-descriptors.h"
 #include "usb-glue.h"
@@ -247,6 +250,9 @@ void tud_cdc_line_coding_cb(uint8_t interface, cdc_line_coding_t const* p_line_c
 #include <esp_log.h>
 #include <esp_check.h>
 
+#define GPIO_FUNC_IN_HIGH 0x38
+#define GPIO_FUNC_IN_LOW 0x3C
+
 static void usb_hal_init_pins(usb_hal_context_t* usb) {
     /* usb_periph_iopins currently configures USB_OTG as USB Device.
      * Introduce additional parameters in usb_hal_context_t when adding support
@@ -274,7 +280,7 @@ static void usb_hal_init_pins(usb_hal_context_t* usb) {
 
 static void usb_hal_bus_reset() {
     gpio_config_t io_conf;
-    io_conf.intr_type = GPIO_PIN_INTR_DISABLE;
+    io_conf.intr_type = GPIO_INTR_DISABLE;
     io_conf.mode = GPIO_MODE_OUTPUT_OD;
     io_conf.pin_bit_mask = ((1 << USBPHY_DM_NUM) | (1 << USBPHY_DP_NUM));
     io_conf.pull_down_en = GPIO_PULLDOWN_ENABLE;
@@ -443,6 +449,9 @@ size_t usb_glue_gdb_receive(uint8_t* buf, size_t len) {
 void usb_glue_dap_send(const uint8_t* buf, size_t len, bool flush) {
     if(usb_device_type == USBDeviceTypeDapLink) {
         tud_vendor_write(buf, len);
+        if(flush) {
+            tud_vendor_write_flush();
+        }
     } else {
         esp_system_abort("Wrong USB device type");
     }
